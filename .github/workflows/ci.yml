@@ -1,0 +1,35 @@
+name: CI
+
+# When to run this workflow
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest   # a fresh Linux machine provided by GitHub
+
+    steps:
+      # 1. Get a copy of the repo's code onto that machine
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install our project's dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Train a model so the tests that need one can run
+      - name: Train model
+        run: python -m src.train
+
+      # 5. Run the test suite
+      - name: Run tests
+        run: pytest -v
