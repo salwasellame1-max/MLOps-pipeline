@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Tests
+.pytest_cache/
+
+# MLflow (local tracking data, can grow fast)
+mlruns/
+mlflow.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
