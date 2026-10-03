@@ -18,6 +18,11 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.2
 THRESHOLD = 0.37  # decision threshold chosen in the sensitivity test (5:1 cost ratio)
 
+# MLflow
+MLFLOW_TRACKING_URI = "sqlite:///mlflow.db"  # relative: always run from the project root
+REGISTERED_MODEL_NAME = "churn-model"
+CHAMPION_ALIAS = "champion"
+
 # Model hyperparameters (same as the notebook)
 XGB_PARAMS = {
     "n_estimators": 300,

@@ -18,4 +18,4 @@ mlflow.db
 # OS / editor
 .DS_Store
 Thumbs.db
-.vscode/
+.vscode/dir -Force .gitignore

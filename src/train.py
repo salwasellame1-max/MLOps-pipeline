@@ -18,8 +18,9 @@ from xgboost import XGBClassifier
 from src import config
 from src.data import load_data, split_features_target
 
-# All runs of this project are grouped under the same "experiment"
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+# All runs of this project are grouped under the same "experiment".
+# Explicit tracking store, identical to the one used by `mlflow ui`.
+mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
 mlflow.set_experiment("churn-prediction")
 
 
@@ -86,16 +87,46 @@ def main():
         # 3. Log the model itself, so it can be reloaded from MLflow later.
         # skops (MLflow's safe serializer) blocks unknown types by default,
         # so we explicitly trust the two XGBoost types that WE trained.
-        mlflow.sklearn.log_model(
+        # registered_model_name turns this into a new VERSION of "churn-model"
+        # in the Model Registry (v1, v2, v3... one per call, automatically).
+        model_info = mlflow.sklearn.log_model(
             pipeline,
             name="model",
+            registered_model_name=config.REGISTERED_MODEL_NAME,
             skops_trusted_types=[
                 "xgboost.core.Booster",
                 "xgboost.sklearn.XGBClassifier",
             ],
         )
+        print(f"Registered as {config.REGISTERED_MODEL_NAME} v{model_info.registered_model_version}")
 
-        # Keep saving to the same fixed path too, for the API and the app
+        # 4. Only promote this version to "champion" if it beats the current
+        # champion's ROC-AUC (or if there is no champion yet). This keeps a
+        # worse run from silently becoming the one the API serves.
+        client = mlflow.MlflowClient()
+        try:
+            current = client.get_model_version_by_alias(
+                config.REGISTERED_MODEL_NAME, config.CHAMPION_ALIAS
+            )
+            current_roc_auc = float(
+                client.get_run(current.run_id).data.metrics["roc_auc"]
+            )
+        except mlflow.exceptions.MlflowException:
+            current_roc_auc = -1  # no champion exists yet: this run wins by default
+
+        if metrics["roc_auc"] > current_roc_auc:
+            client.set_registered_model_alias(
+                config.REGISTERED_MODEL_NAME,
+                config.CHAMPION_ALIAS,
+                model_info.registered_model_version,
+            )
+            print(f"New champion: v{model_info.registered_model_version} "
+                  f"(roc_auc {metrics['roc_auc']} > {current_roc_auc})")
+        else:
+            print(f"Not promoted: v{model_info.registered_model_version} "
+                  f"(roc_auc {metrics['roc_auc']} <= current champion {current_roc_auc})")
+
+        # Keep saving to the same fixed path too, as a simple local fallback
         config.MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(pipeline, config.MODEL_PATH)
         config.METRICS_PATH.write_text(json.dumps(metrics, indent=2))

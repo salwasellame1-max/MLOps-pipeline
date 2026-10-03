@@ -8,6 +8,7 @@ from functools import lru_cache
 import pandas as pd
 
 import joblib
+import mlflow
 from src import config
 
 # The exact columns the model was trained on (the "contract" with the caller)
@@ -22,10 +23,25 @@ FEATURE_COLUMNS = [
 
 @lru_cache(maxsize=1)
 def load_model():
-    """Load the pipeline once and keep it in memory (loading from disk is slow)."""
+    """Load the pipeline once and keep it in memory (loading from disk is slow).
+
+    Tries the MLflow Model Registry first (the version aliased "champion"),
+    and falls back to the local joblib file if the registry is unavailable
+    (for example, a fresh checkout with no mlflow.db yet).
+    """
+    try:
+        mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+        uri = f"models:/{config.REGISTERED_MODEL_NAME}@{config.CHAMPION_ALIAS}"
+        model = mlflow.sklearn.load_model(uri)
+        print(f"Loaded champion model from MLflow registry ({uri})")
+        return model
+    except Exception as e:
+        print(f"Could not load from MLflow registry ({e}); falling back to local file.")
+
     if not config.MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"No model at {config.MODEL_PATH}. Run `python -m src.train` first."
+            f"No model at {config.MODEL_PATH} and no champion in the registry. "
+            "Run `python -m src.train` first."
         )
     return joblib.load(config.MODEL_PATH)
 
