@@ -1,6 +1,8 @@
-# 📉 Customer Churn Prediction
+# 📉 Customer Churn Prediction — MLOps Pipeline
 
-Predicting which telecom customers are likely to leave, explaining why with SHAP, and choosing the decision threshold from a business-cost point of view. Includes an interactive Streamlit demo.
+This repository industrializes a churn prediction model into a production-style pipeline: a modular training/inference codebase, a FastAPI service, Docker packaging, automated tests, CI, MLflow experiment tracking and a Model Registry, DVC data versioning, and a data drift monitoring script.
+
+The exploratory data science work — EDA, model comparison, SHAP interpretation, decision-threshold calibration, and the Streamlit demo — lives in a separate repository: **[churn-prediction](LIEN_VERS_TON_AUTRE_REPO)**. This README focuses on the MLOps side; see that repo for the analysis and reasoning behind the modeling choices reused here (model type, hyperparameters, threshold).
 
 ![App demo](screenshots/app_high_risk.png)
 
@@ -16,6 +18,12 @@ Keeping an existing customer is cheaper than acquiring a new one. The goal is to
 - Target: `Churn` (Yes/No), about 27% of customers churn (imbalanced classes)
 
 **Data versioning**: the raw CSV is tracked with [DVC](https://dvc.org) instead of Git, so the repo stays light and the exact dataset version used for any given model is reproducible (`data/raw/*.csv.dvc` holds a content hash of the file). For this project the DVC remote is a local folder, used to demonstrate the workflow (`dvc add`, `dvc push`/`dvc pull`); a team setup would point it to shared cloud storage (S3, GCS, Google Drive) instead. Because of this, GitHub Actions CI cannot `dvc pull` the dataset, so the CI training step currently relies on a copy of the CSV committed separately for that purpose.
+
+## 📡 Monitoring (data drift)
+
+`src/monitoring.py` uses [Evidently](https://www.evidentlyai.com/) to compare the training data (reference) against newer data (current) and flag features whose distribution has drifted, which signals that the model may need retraining. In production, "current" would be a recent export of live customers instead of a held-out split of the training set.
+
+⚠️ **Known limitation**: Evidently currently depends on Pydantic's v1-compatibility layer, which is not yet compatible with Python 3.14. On this environment the script fails at import time (`pydantic.v1.errors.ConfigError`). The script is included to demonstrate the monitoring design; running it requires a Python ≤3.12 environment until Evidently updates this dependency.
 
 ## 🛠️ Approach
 
@@ -96,18 +104,53 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-The app needs `churn_model.joblib` in the same folder. To regenerate it, run the notebook, whose last cell saves the trained pipeline. The versions of `scikit-learn` and `xgboost` should match the ones used for training.
+To train the model yourself instead of using the one already in `models/`, run `python -m src.train` first (see below).
 
 ## 📁 Project structure
 
 ```
 .
-├── churn_customer_prediction.ipynb   # EDA, modeling, SHAP, threshold tuning
-├── app.py                            # Streamlit demo
-├── churn_model.joblib                # Trained pipeline
+├── .github/workflows/ci.yml   # GitHub Actions: install, train, test on every push
+├── src/                       # Production code: config, data, train, predict, api, schemas, monitoring
+├── tests/                     # pytest unit tests
+├── data/raw/                  # Dataset, versioned with DVC (*.csv.dvc)
+├── models/                    # Trained pipeline + metrics (local fallback)
+├── mlruns/, mlflow.db         # MLflow tracking store (local, gitignored)
+├── app.py                     # Streamlit demo
+├── Dockerfile, .dockerignore
 ├── requirements.txt
-├── screenshots/                      # Images used in this README
+├── screenshots/
 └── README.md
+```
+
+### Training, serving, and testing
+
+```bash
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
+
+pip install -r requirements.txt
+
+# Train (creates models/churn_model.joblib, logs to MLflow, registers "champion")
+python -m src.train
+
+# Run the tests
+python -m pytest
+
+# Serve the API
+python -m uvicorn src.api:app --reload
+# → http://127.0.0.1:8000/docs
+
+# Or run the Streamlit demo
+python -m streamlit run app.py
+
+# Or build and run the Docker image
+docker build -t churn-api .
+docker run -p 8000:8000 churn-api
+
+# Inspect experiments and the Model Registry
+python -m mlflow ui --backend-store-uri sqlite:///mlflow.db
+# → http://127.0.0.1:5000
 ```
 
 ## ⚠️ Limitations and next steps
